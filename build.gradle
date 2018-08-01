@@ -9,6 +9,7 @@ allprojects {
 
     repositories {
         mavenCentral()
+        jcenter()
     }
 }
 
@@ -17,7 +18,8 @@ subprojects {
     apply plugin: 'org.jetbrains.kotlin.jvm'
 
     dependencies {
-        compile group: 'org.jetbrains.kotlin', name: 'kotlin-stdlib-jdk8', version: '1.2.51'
+        implementation group: 'org.jetbrains.kotlin', name: 'kotlin-stdlib-jdk8', version: '1.2.51'
+        implementation 'com.beust:klaxon:3.0.1'
     }
 
     sourceCompatibility = 1.8

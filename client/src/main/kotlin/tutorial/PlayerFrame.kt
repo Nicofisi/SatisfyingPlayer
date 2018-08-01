@@ -78,7 +78,7 @@ object PlayerFrame {
 
             contentPane.add(controlsPane, BorderLayout.SOUTH)
 
-            frame.defaultCloseOperation = JFrame.DISPOSE_ON_CLOSE
+            frame.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
             frame.contentPane = contentPane
             frame.isVisible = true
             mediaPlayerComponent.mediaPlayer.setFullScreenStrategy(Win32FullScreenStrategy(frame))
@@ -109,6 +109,8 @@ object PlayerFrame {
             frame.addWindowListener(object : WindowAdapter() {
                 override fun windowClosing(e: WindowEvent) {
                     mediaPlayerComponent.release()
+                    frame.dispose()
+                    frame.isVisible = false
                 }
             })
 
