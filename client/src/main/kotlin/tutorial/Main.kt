@@ -2,7 +2,6 @@ package tutorial
 
 import javax.swing.JFrame
 
-
 fun main(args: Array<String>) {
     JFrame("SatisfyingPlayer")
 
