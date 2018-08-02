@@ -5,6 +5,7 @@ import com.beust.klaxon.Klaxon
 import com.beust.klaxon.Parser
 import com.cyanogenmod.updater.utils.MD5
 import java.awt.BorderLayout
+import java.awt.GridBagLayout
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
@@ -16,6 +17,7 @@ import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import javax.swing.*
 import kotlin.concurrent.timerTask
+import java.awt.GridBagConstraints
 
 
 const val SERVER_IP = "127.0.0.1"
@@ -36,20 +38,41 @@ fun sendToServer(clientMessage: ClientMessage) {
 var currentVideoChecksum: String? = null
 
 fun main(args: Array<String>) {
+    val lastPlayedStore = Paths.get(System.getenv("LOCALAPPDATA"), "SatisfyingPlayer", "last-played")
+    var defaultFileChooserDir = if (Files.exists(lastPlayedStore)) lastPlayedStore.toFile().readText().trim() else ""
+    if (defaultFileChooserDir.isEmpty())
+        defaultFileChooserDir = System.getProperty("user.home")
+
+
     UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName())
 
-
-    val lastPlayedStore = Paths.get(System.getenv("LOCALAPPDATA"), "SatisfyingPlayer", "last-played")
-
     val frame = JFrame("SatisfyingPlayer")
-    frame.setBounds(100, 100, 600, 400)
 
-    val contentPane = JPanel()
-    contentPane.layout = BorderLayout()
+    val mainPanel = JPanel()
+    val southPanel = JPanel()
+    val centerPanel = JPanel()
+
+    val playButton = JButton("Play")
+    val chooseFileButton = JButton("Open file selector")
+    val serverStatus = JLabel("Connecting to the server")
+    val fileChooser = JFileChooser(defaultFileChooserDir)
+
+    mainPanel.add(serverStatus, BorderLayout.NORTH)
+    mainPanel.add(centerPanel, BorderLayout.CENTER)
+    mainPanel.add(southPanel, BorderLayout.SOUTH)
+    centerPanel.add(chooseFileButton, GridBagConstraints())
+    southPanel.add(playButton, BorderLayout.CENTER)
+
+    mainPanel.layout = BorderLayout()
+    centerPanel.layout = GridBagLayout()
+
+    frame.defaultCloseOperation = JFrame.EXIT_ON_CLOSE
+    frame.contentPane = mainPanel
+    frame.isVisible = true
+    frame.setBounds(100, 100, 600, 250)
+
 
     val timer = Timer()
-
-    val serverStatus = JLabel("Connecting to the server")
 
     val dotChangingTask = timerTask {
         SwingUtilities.invokeLater {
@@ -60,34 +83,24 @@ fun main(args: Array<String>) {
 
     timer.scheduleAtFixedRate(dotChangingTask, 250, 250)
 
-    contentPane.add(serverStatus, BorderLayout.NORTH)
 
-    val controlsPane = JPanel()
+    playButton.addActionListener {
+        if (!Files.exists(lastPlayedStore)) {
+            Files.createDirectory(lastPlayedStore.parent)
+            Files.createFile(lastPlayedStore)
+        }
+        lastPlayedStore.toFile().writeText(fileChooser.selectedFile.absolutePath)
+        currentVideoChecksum = MD5.calculate1MBMD5(fileChooser.selectedFile) + "-" + fileChooser.selectedFile.length()
+        PlayerFrame.openAndPlay(fileChooser.selectedFile)
+    }
 
-    contentPane.add(controlsPane, BorderLayout.SOUTH)
+    chooseFileButton.addActionListener {
+        val result = fileChooser.showOpenDialog(frame)
+        if (result == JFileChooser.APPROVE_OPTION) {
 
-    frame.defaultCloseOperation = JFrame.EXIT_ON_CLOSE
-    frame.contentPane = contentPane
-    frame.isVisible = true
-
-    val fileChooser = JFileChooser({
-        val filePath = if (Files.exists(lastPlayedStore)) lastPlayedStore.toFile().readText().trim() else ""
-        if (filePath.isEmpty()) System.getProperty("user.home") else filePath
-    }.invoke())
-
-    fileChooser.addActionListener {
-        if (it.actionCommand == "ApproveSelection") {
-            if (!Files.exists(lastPlayedStore)) {
-                Files.createDirectory(lastPlayedStore.parent)
-                Files.createFile(lastPlayedStore)
-            }
-            lastPlayedStore.toFile().writeText(fileChooser.selectedFile.absolutePath)
-            currentVideoChecksum = MD5.calculate1MBMD5(fileChooser.selectedFile) + "-" + fileChooser.selectedFile.length()
-            PlayerFrame.openAndPlay(fileChooser.selectedFile)
         }
     }
 
-    contentPane.add(fileChooser, BorderLayout.CENTER)
 
     Thread {
         try {
