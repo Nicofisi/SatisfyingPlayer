@@ -18,6 +18,9 @@ import java.util.concurrent.Executors
 import javax.swing.*
 import kotlin.concurrent.timerTask
 import java.awt.GridBagConstraints
+import javax.swing.BoxLayout
+
+
 
 
 const val SERVER_IP = "127.0.0.1"
@@ -40,8 +43,9 @@ var currentVideoChecksum: String? = null
 fun main(args: Array<String>) {
     val lastPlayedStore = Paths.get(System.getenv("LOCALAPPDATA"), "SatisfyingPlayer", "last-played")
     var defaultFileChooserDir = if (Files.exists(lastPlayedStore)) lastPlayedStore.toFile().readText().trim() else ""
-    if (defaultFileChooserDir.isEmpty())
+    if (defaultFileChooserDir.isEmpty()) {
         defaultFileChooserDir = System.getProperty("user.home")
+    }
 
 
     UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName())
@@ -49,22 +53,32 @@ fun main(args: Array<String>) {
     val frame = JFrame("SatisfyingPlayer")
 
     val mainPanel = JPanel()
-    val southPanel = JPanel()
+    val northPanel = JPanel()
     val centerPanel = JPanel()
+    val centerOfCenterPanel = JPanel()
+    val bottomOfCenterOfCenterPanel = JPanel()
+    val southPanel = JPanel()
+
+    mainPanel.layout = BorderLayout()
+    centerPanel.layout = GridBagLayout()
+    centerOfCenterPanel.layout = BoxLayout(centerOfCenterPanel, BoxLayout.Y_AXIS)
+    bottomOfCenterOfCenterPanel.layout = GridBagLayout()
 
     val playButton = JButton("Play")
     val chooseFileButton = JButton("Open file selector")
     val serverStatus = JLabel("Connecting to the server")
     val fileChooser = JFileChooser(defaultFileChooserDir)
+    val fileUrlTextField = JTextField(defaultFileChooserDir, 70)
 
-    mainPanel.add(serverStatus, BorderLayout.NORTH)
+    mainPanel.add(northPanel, BorderLayout.NORTH)
     mainPanel.add(centerPanel, BorderLayout.CENTER)
     mainPanel.add(southPanel, BorderLayout.SOUTH)
-    centerPanel.add(chooseFileButton, GridBagConstraints())
+    northPanel.add(serverStatus, BorderLayout.CENTER)
+    centerPanel.add(centerOfCenterPanel, GridBagConstraints())
+    centerOfCenterPanel.add(fileUrlTextField)
+    centerOfCenterPanel.add(bottomOfCenterOfCenterPanel)
+    bottomOfCenterOfCenterPanel.add(chooseFileButton, GridBagConstraints())
     southPanel.add(playButton, BorderLayout.CENTER)
-
-    mainPanel.layout = BorderLayout()
-    centerPanel.layout = GridBagLayout()
 
     frame.defaultCloseOperation = JFrame.EXIT_ON_CLOSE
     frame.contentPane = mainPanel
@@ -153,8 +167,8 @@ fun main(args: Array<String>) {
                     }
                 }
 
+                dotChangingTask.cancel()
                 SwingUtilities.invokeLater {
-                    dotChangingTask.cancel()
                     serverStatus.text = "Connected to the server"
                 }
             }
@@ -162,7 +176,6 @@ fun main(args: Array<String>) {
         } catch (ex: Exception) {
             dotChangingTask.cancel()
             SwingUtilities.invokeLater {
-                dotChangingTask.cancel()
                 frame.toFront()
                 serverStatus.text = "Server connection error: " + ex.message
             }
