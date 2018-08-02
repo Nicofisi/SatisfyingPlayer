@@ -5,7 +5,6 @@ import com.beust.klaxon.Klaxon
 import com.beust.klaxon.Parser
 import com.cyanogenmod.updater.utils.MD5
 import java.awt.BorderLayout
-import java.awt.Button
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
@@ -34,7 +33,12 @@ fun sendToServer(clientMessage: ClientMessage) {
     }
 }
 
+var currentVideoChecksum: String? = null
+
 fun main(args: Array<String>) {
+    UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName())
+
+
     val lastPlayedStore = Paths.get(System.getenv("LOCALAPPDATA"), "SatisfyingPlayer", "last-played")
 
     val frame = JFrame("SatisfyingPlayer")
@@ -59,8 +63,6 @@ fun main(args: Array<String>) {
     contentPane.add(serverStatus, BorderLayout.NORTH)
 
     val controlsPane = JPanel()
-    val openPlayerButton = Button("Play")
-    controlsPane.add(openPlayerButton)
 
     contentPane.add(controlsPane, BorderLayout.SOUTH)
 
@@ -73,17 +75,19 @@ fun main(args: Array<String>) {
         if (filePath.isEmpty()) System.getProperty("user.home") else filePath
     }.invoke())
 
-    contentPane.add(fileChooser, BorderLayout.CENTER)
-
-    openPlayerButton.addActionListener {
-        if (!Files.exists(lastPlayedStore)) {
-            Files.createDirectory(lastPlayedStore.parent)
-            Files.createFile(lastPlayedStore)
+    fileChooser.addActionListener {
+        if (it.actionCommand == "ApproveSelection") {
+            if (!Files.exists(lastPlayedStore)) {
+                Files.createDirectory(lastPlayedStore.parent)
+                Files.createFile(lastPlayedStore)
+            }
+            lastPlayedStore.toFile().writeText(fileChooser.selectedFile.absolutePath)
+            currentVideoChecksum = MD5.calculate1MBMD5(fileChooser.selectedFile) + "-" + fileChooser.selectedFile.length()
+            PlayerFrame.openAndPlay(fileChooser.selectedFile)
         }
-        lastPlayedStore.toFile().writeText(fileChooser.selectedFile.absolutePath)
-        val md = MD5.calculate1MBMD5(fileChooser.selectedFile) // TODO
-        PlayerFrame.openAndPlay(fileChooser.selectedFile)
     }
+
+    contentPane.add(fileChooser, BorderLayout.CENTER)
 
     Thread {
         try {
@@ -98,7 +102,7 @@ fun main(args: Array<String>) {
                 val jsonObj = Parser().parse(StringBuilder(jsonLine)) as JsonObject
 
                 when (jsonObj["name"]) {
-                    "ping" -> sendToServer(PingMessage())
+                    "ping" -> sendToServer(ClientPingMessage(currentVideoChecksum, System.currentTimeMillis()))
                     "pause" -> {
                         val message = Klaxon().parse<ServerPauseMessage>(jsonLine)!!
                         PlayerFrame.lastStatus = "paused by " + message.byUser
@@ -115,6 +119,23 @@ fun main(args: Array<String>) {
                             PlayerFrame.mediaPlayerComponent?.mediaPlayer?.time =
                                     (System.currentTimeMillis() - message.timeMillis) + message.movieTime
                             PlayerFrame.mediaPlayerComponent?.mediaPlayer?.setPause(false)
+                        }
+                    }
+                    "time_change" -> {
+                        val message = Klaxon().parse<ServerContinueMessage>(jsonLine)!!
+                        PlayerFrame.lastStatus = "time changed by " + message.byUser
+                        PlayerFrame.updateWindowTitle()
+                        PlayerFrame.mediaPlayerComponent?.mediaPlayer?.time =
+                                (System.currentTimeMillis() - message.timeMillis) + message.movieTime
+                    }
+                    "playback_status" -> {
+                        val message = Klaxon().parse<ServerPlaybackStatusMessage>(jsonLine)!!
+                        if (message.isPaused == null) {
+                            PlayerFrame.lastStatus = "you are the first person watching this (unpause to start)"
+                        } else {
+                            PlayerFrame.mediaPlayerComponent?.mediaPlayer?.time =
+                                    message.movieTime!! + (System.currentTimeMillis() - message.timeMillis!!)
+                            PlayerFrame.mediaPlayerComponent?.mediaPlayer?.setPause(message.isPaused!!)
                         }
                     }
                 }

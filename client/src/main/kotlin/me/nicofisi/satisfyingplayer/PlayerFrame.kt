@@ -30,9 +30,9 @@ object PlayerFrame {
     }
 
     fun formatTime(millis: Long): String {
-        val hours = millis / (1000 * 60)
-        val minutes = millis / (1000 * 60)
-        val seconds = millis / 1000
+        val hours = millis / (1000 * 60 * 60)
+        val minutes = millis / (1000 * 60) - (hours * 60)
+        val seconds = millis / 1000 - (minutes * 60 - hours * 60 * 60)
         return "%02d:%02d:%02d".format(hours, minutes, seconds)
     }
 
@@ -41,9 +41,9 @@ object PlayerFrame {
         updateWindowTitle()
         mediaPlayerComponent!!.mediaPlayer!!.setPause(paused)
         if (paused) {
-            sendToServer(ClientPauseMessage(mediaPlayerComponent!!.mediaPlayer.time))
+            sendToServer(ClientPauseMessage(currentVideoChecksum!!, mediaPlayerComponent!!.mediaPlayer.time))
         } else {
-            sendToServer(ClientContinueMessage(mediaPlayerComponent!!.mediaPlayer.time, System.currentTimeMillis()))
+            sendToServer(ClientContinueMessage(currentVideoChecksum!!, mediaPlayerComponent!!.mediaPlayer.time, System.currentTimeMillis()))
         }
     }
 
@@ -83,7 +83,11 @@ object PlayerFrame {
                 }
 
                 override fun mouseWheelMoved(e: MouseWheelEvent) {
-                    val volume = mediaPlayer.volume + (5 * if (e.unitsToScroll > 0) -1 else 1)
+                    updateVolume((5 * if (e.unitsToScroll > 0) -1 else 1))
+                }
+
+                fun updateVolume(delta: Int) {
+                    val volume = mediaPlayer.volume + delta
                     currentVolume = volume
                     mediaPlayer.volume = volume
                     updateWindowTitle()
@@ -93,10 +97,22 @@ object PlayerFrame {
                     when (e.keyCode) {
                         32 -> // space
                             setAndSendPause(mediaPlayer.isPlaying)
-                        37 -> // left arrow
+                        37 -> { // left arrow
                             mediaPlayer.skip(if (e.isShiftDown || e.isAltDown || e.isControlDown) -30000 else -5000)
-                        39 -> // right arrow
+                            sendToServer(ClientTimeChangeMessage(
+                                    currentVideoChecksum!!, mediaPlayer.time, System.currentTimeMillis(), !mediaPlayer.isPlaying))
+                        }
+                        38 -> { // arrow up
+                            updateVolume(5)
+                        }
+                        39 -> { // right arrow
                             mediaPlayer.skip(if (e.isShiftDown || e.isAltDown || e.isControlDown) 30000 else 5000)
+                            sendToServer(ClientTimeChangeMessage(
+                                    currentVideoChecksum!!, mediaPlayer.time, System.currentTimeMillis(), !mediaPlayer.isPlaying))
+                        }
+                        40 -> { // arrow down
+                            updateVolume(-5)
+                        }
                         122 -> // f12
                             mediaPlayer.toggleFullScreen()
                     }
@@ -130,6 +146,9 @@ object PlayerFrame {
             mediaPlayerComponent!!.mediaPlayer.setFullScreenStrategy(Win32FullScreenStrategy(frame))
             mediaPlayerComponent!!.mediaPlayer.playMedia(file.absolutePath)
             mediaPlayerComponent!!.mediaPlayer.setPause(true)
+
+            sendToServer(ClientPlaybackStatusRequestMessage(currentVideoChecksum!!))
+
             contentPane.addMouseListener(object : MouseListener {
                 override fun mouseReleased(e: MouseEvent?) {
 

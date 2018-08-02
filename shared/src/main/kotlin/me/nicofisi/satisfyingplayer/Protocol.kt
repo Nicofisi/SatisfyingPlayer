@@ -2,8 +2,6 @@
 
 package me.nicofisi.satisfyingplayer
 
-import com.beust.klaxon.Json
-
 const val SERVER_PORT = 34857
 
 
@@ -14,43 +12,61 @@ interface ClientMessage
 interface ServerMessage
 
 
-class PingMessage : Message("ping"), ClientMessage, ServerMessage
 
-
+class ClientPingMessage(
+        val videoChecksum: String? = null,
+        val timeMillis: Long
+) : Message("ping"), ClientMessage
 
 class ClientPauseMessage(
+        val videoChecksum: String,
         val movieTime: Long
 ) : Message("pause"), ClientMessage
 
 class ClientContinueMessage(
+        val videoChecksum: String,
         val movieTime: Long,
         val timeMillis: Long
 ) : Message("continue"), ClientMessage
 
 
 class ClientTimeChangeMessage(
+        val videoChecksum: String,
         val movieTime: Long,
+        val timeMillis: Long,
+        val isPaused: Boolean
+) : Message("time_change"), ClientMessage
+
+class ClientPlaybackStatusRequestMessage(
+        val videoChecksum: String
+) : Message("playback_status_request"), ClientMessage
+
+
+
+class ServerPingMessage(
         val timeMillis: Long
-)
-
-
+) : Message("ping"), ServerMessage
 
 class ServerPauseMessage(
         val movieTime: Long,
-        @Json(name = "by_user")
         val byUser: String
 ) : Message("pause"), ServerMessage
 
 class ServerContinueMessage(
         val movieTime: Long,
         val timeMillis: Long,
-        @Json(name = "by_user")
         val byUser: String
 ) : Message("continue"), ServerMessage
 
 class ServerTimeChangeMessage(
         val movieTime: Long,
         val timeMillis: Long,
-        @Json(name = "by_user")
-        val byUser: String
-)
+        val byUser: String,
+        val isPaused: Boolean
+) : Message("time_change"), ServerMessage
+
+class ServerPlaybackStatusMessage(
+        val movieTime: Long? = null,
+        val timeMillis: Long? = null,
+        val isPaused: Boolean? = null
+) : Message("playback_status"), ServerMessage
