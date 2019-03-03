@@ -74,7 +74,9 @@ fun main(args: Array<String>) {
 
                 while (true) {
                     val jsonLine = br.readLine()
-                    val jsonObj = Parser().parse(StringBuilder(jsonLine)) as JsonObject
+                    val jsonObj = Parser.default().parse(StringBuilder(jsonLine)) as JsonObject
+
+                    println("$socket | $jsonObj")
 
                     when (jsonObj["name"]) {
                         "ping" -> {
