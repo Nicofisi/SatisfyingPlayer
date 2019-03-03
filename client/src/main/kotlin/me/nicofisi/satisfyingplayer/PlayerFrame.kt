@@ -77,7 +77,7 @@ object PlayerFrame {
 
             println("hi")
 
-            var mediaPlayerComponent = object : EmbeddedMediaPlayerComponent() {}
+            mediaPlayerComponent = object : EmbeddedMediaPlayerComponent() {}
 
             println("hi2")
 
