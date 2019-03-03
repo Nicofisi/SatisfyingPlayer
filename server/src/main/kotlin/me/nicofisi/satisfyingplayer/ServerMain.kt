@@ -8,6 +8,7 @@ import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.ServerSocket
 import java.net.Socket
+import java.nio.ByteBuffer
 import java.util.*
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -18,8 +19,12 @@ data class ClientInfo(val socket: Socket, val sendExecutor: Executor, var lastPi
 fun sendToClient(client: ClientInfo, serverMessage: ServerMessage) {
     val pw = PrintWriter(client.socket.getOutputStream())
 
+    val json = Klaxon().toJsonString(serverMessage)
+
+    println("${client.socket} | OUT $json")
+
     client.sendExecutor.execute {
-        pw.write(Klaxon().toJsonString(serverMessage))
+        pw.write(json)
         pw.write("\n")
         pw.flush()
     }
@@ -29,7 +34,7 @@ data class MovieInfo(val videoChecksum: String, var lastUpdateMovieTime: Long, v
 
 var movieInfos = emptyList<MovieInfo>()
 
-fun main(args: Array<String>) {
+fun main() {
     val serverSocket = ServerSocket(SERVER_PORT)
 
     var sockets = emptyList<ClientInfo>()
@@ -41,12 +46,12 @@ fun main(args: Array<String>) {
             val (socket, sendExecutor, lastPing) = clientInfo
 
             if (System.currentTimeMillis() > lastPing + 15000) {
-                println("Closing the connection to " + socket.toString() + " after 15 seconds of no keep alive messages")
+                println("Closing the connection to $socket after 15 seconds of no keep alive messages")
                 socket.close()
                 sockets -= clientInfo
             } else {
                 sendExecutor.execute {
-                    sendToClient(clientInfo, ServerPingMessage(System.currentTimeMillis()))
+                    sendToClient(clientInfo, ServerPingMessage(System.currentTimeMillis(), sockets.size))
                 }
             }
         }
@@ -60,7 +65,7 @@ fun main(args: Array<String>) {
 
     while (true) {
         val socket = serverSocket.accept()
-        println("Handling new connection from " + socket.toString())
+        println("Handling new connection from $socket")
 
         val sendExecutor = Executors.newSingleThreadExecutor()
         val clientInfo = ClientInfo(socket, sendExecutor, System.currentTimeMillis())
@@ -68,13 +73,37 @@ fun main(args: Array<String>) {
 
         Thread {
             try {
-                sendToClient(clientInfo, ServerPingMessage(System.currentTimeMillis()))
-
                 val br = BufferedReader(InputStreamReader(socket.getInputStream()))
+
+                val versionByteArray = ByteArray(4)
+                socket.getInputStream().read(versionByteArray)
+                val clientProtoclVersion = ByteBuffer.wrap(versionByteArray).int
+                println("Protocol version of $socket is $clientProtoclVersion")
+
+                val versionOk = clientProtoclVersion == PROTOCOL_VERSION
+
+                socket.getOutputStream().write(
+                        ByteBuffer.allocate(Int.SIZE_BYTES * 2)
+                                .also {
+                                    it.putInt(PROTOCOL_VERSION)
+                                    it.putInt(if (versionOk) 1 else 0)
+                                }.array()
+                )
+
+                if (!versionOk) {
+                    println("Closing connection to $socket due to protocol version mismatch")
+                    socket.close()
+                    return@Thread
+                }
+
+                sendToClient(clientInfo, ServerPingMessage(System.currentTimeMillis(), sockets.size))
 
                 while (true) {
                     val jsonLine = br.readLine()
-                    val jsonObj = Parser().parse(StringBuilder(jsonLine)) as JsonObject
+
+                    println("$socket | IN  $jsonLine")
+
+                    val jsonObj = Parser.default().parse(StringBuilder(jsonLine)) as JsonObject
 
                     when (jsonObj["name"]) {
                         "ping" -> {
@@ -95,7 +124,7 @@ fun main(args: Array<String>) {
                                 info.isPaused = true
                             }
                             sockets.filter { it.videoChecksum == message.videoChecksum }.forEach {
-                                sendToClient(it, ServerPauseMessage(message.movieTime, socket.toString()))
+                                sendToClient(it, ServerPauseMessage(message.movieTime, socket.inetAddress.toString() + ":" + socket.port))
                             }
                         }
                         "continue" -> {
@@ -111,7 +140,7 @@ fun main(args: Array<String>) {
                                 info.isPaused = false
                             }
                             sockets.filter { it.videoChecksum == message.videoChecksum }.forEach {
-                                sendToClient(it, ServerContinueMessage(message.movieTime, message.timeMillis, socket.toString()))
+                                sendToClient(it, ServerContinueMessage(message.movieTime, message.timeMillis, socket.inetAddress.toString() + ":" + socket.port))
                             }
                         }
                         "time_change" -> {
@@ -128,7 +157,7 @@ fun main(args: Array<String>) {
                             }
                             sockets.filter { it.videoChecksum == message.videoChecksum }.forEach {
                                 sendToClient(it, ServerTimeChangeMessage(
-                                        message.movieTime, message.timeMillis, socket.toString(), message.isPaused))
+                                        message.movieTime, message.timeMillis, socket.inetAddress.toString() + ":" + socket.port, message.isPaused))
                             }
                         }
                         "playback_status_request" -> {

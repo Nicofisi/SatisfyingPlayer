@@ -1,11 +1,13 @@
 package me.nicofisi.satisfyingplayer
 
-import uk.co.caprica.vlcj.component.EmbeddedMediaPlayerComponent
-import uk.co.caprica.vlcj.discovery.NativeDiscovery
-import uk.co.caprica.vlcj.player.embedded.windows.Win32FullScreenStrategy
+import uk.co.caprica.vlcj.factory.discovery.NativeDiscovery
+import uk.co.caprica.vlcj.player.base.TrackDescription
+import uk.co.caprica.vlcj.player.component.EmbeddedMediaPlayerComponent
+import uk.co.caprica.vlcj.player.embedded.fullscreen.windows.Win32FullScreenStrategy
 import java.awt.BorderLayout
 import java.awt.event.*
 import java.io.File
+import java.lang.Integer.max
 import java.util.*
 import javax.swing.JFrame
 import javax.swing.JPanel
@@ -24,9 +26,21 @@ object PlayerFrame {
 
     fun updateWindowTitle() {
         SwingUtilities.invokeLater {
-            frame?.title = "$fileName - ${formatTime(mediaPlayerComponent?.mediaPlayer?.time ?: -1)}" +
+            frame?.title = "$fileName - ${formatTime(mediaPlayerComponent?.mediaPlayer()?.status()?.time() ?: -1)}" +
                     " - $currentVolume% volume - $lastStatus - SatisfyingPlayer"
         }
+    }
+
+    var timer: Timer? = null
+
+    fun closeFrame() {
+        timer?.cancel()
+        mediaPlayerComponent?.release()
+        mediaPlayerComponent = null
+        fileName = null
+        frame?.dispose()
+        frame?.isVisible = false
+        currentVideoChecksum = null
     }
 
     fun formatTime(millis: Long): String {
@@ -39,11 +53,11 @@ object PlayerFrame {
     fun setAndSendPause(paused: Boolean) {
         lastStatus = "synchronizing with the server"
         updateWindowTitle()
-        mediaPlayerComponent!!.mediaPlayer!!.setPause(paused)
+        mediaPlayerComponent!!.mediaPlayer()!!.controls().setPause(paused)
         if (paused) {
-            sendToServer(ClientPauseMessage(currentVideoChecksum!!, mediaPlayerComponent!!.mediaPlayer.time))
+            sendToServer(ClientPauseMessage(currentVideoChecksum!!, mediaPlayerComponent!!.mediaPlayer().status().time()))
         } else {
-            sendToServer(ClientContinueMessage(currentVideoChecksum!!, mediaPlayerComponent!!.mediaPlayer.time, System.currentTimeMillis()))
+            sendToServer(ClientContinueMessage(currentVideoChecksum!!, mediaPlayerComponent!!.mediaPlayer().status().time(), System.currentTimeMillis()))
         }
     }
 
@@ -52,9 +66,9 @@ object PlayerFrame {
 
         NativeDiscovery().discover()
 
-        val timer = Timer()
+        timer = Timer()
 
-        timer.scheduleAtFixedRate(timerTask { updateWindowTitle() }, 500, 250)
+        timer?.scheduleAtFixedRate(timerTask { updateWindowTitle() }, 500, 250)
 
         SwingUtilities.invokeLater {
             frame = JFrame("Player - SatisfyingPlayer")
@@ -68,17 +82,19 @@ object PlayerFrame {
                 var pauseTask: TimerTask? = null
 
                 override fun mouseClicked(e: MouseEvent) {
+                    if (e.button != 1) return // only left click
+
                     if (lastLeftClick > System.currentTimeMillis() - LEFT_CLICK_PAUSE_DELAY) {
-                        mediaPlayer.toggleFullScreen()
+                        mediaPlayer().fullScreen().toggle()
                         pauseTask?.cancel()
                         pauseTask = null
                         lastLeftClick = 0
                     } else {
                         lastLeftClick = System.currentTimeMillis()
                         pauseTask = timerTask {
-                            setAndSendPause(mediaPlayer.isPlaying)
+                            setAndSendPause(mediaPlayer().status().isPlaying)
                         }
-                        timer.schedule(pauseTask, LEFT_CLICK_PAUSE_DELAY)
+                        timer?.schedule(pauseTask, LEFT_CLICK_PAUSE_DELAY)
                     }
                 }
 
@@ -87,112 +103,86 @@ object PlayerFrame {
                 }
 
                 fun updateVolume(delta: Int) {
-                    val volume = mediaPlayer.volume + delta
+                    val volume = max(mediaPlayer().audio().volume() + delta, 0)
                     currentVolume = volume
-                    mediaPlayer.volume = volume
+                    mediaPlayer().audio().setVolume(volume)
                     updateWindowTitle()
                 }
 
                 override fun keyPressed(e: KeyEvent) {
                     when (e.keyCode) {
                         32 -> // space
-                            setAndSendPause(mediaPlayer.isPlaying)
+                            setAndSendPause(mediaPlayer().status().isPlaying)
                         37 -> { // left arrow
-                            mediaPlayer.skip(if (e.isShiftDown || e.isAltDown || e.isControlDown) -30000 else -5000)
+                            mediaPlayer().controls().skipTime(if (e.isShiftDown || e.isAltDown || e.isControlDown) -30000 else -5000)
                             sendToServer(ClientTimeChangeMessage(
-                                    currentVideoChecksum!!, mediaPlayer.time, System.currentTimeMillis(), !mediaPlayer.isPlaying))
+                                    currentVideoChecksum!!, mediaPlayer().status().time(), System.currentTimeMillis(), !mediaPlayer().status().isPlaying))
                         }
                         38 -> { // arrow up
                             updateVolume(5)
                         }
                         39 -> { // right arrow
-                            mediaPlayer.skip(if (e.isShiftDown || e.isAltDown || e.isControlDown) 30000 else 5000)
+                            mediaPlayer().controls().skipTime(if (e.isShiftDown || e.isAltDown || e.isControlDown) 30000 else 5000)
                             sendToServer(ClientTimeChangeMessage(
-                                    currentVideoChecksum!!, mediaPlayer.time, System.currentTimeMillis(), !mediaPlayer.isPlaying))
+                                    currentVideoChecksum!!, mediaPlayer().status().time(), System.currentTimeMillis(), !mediaPlayer().status().isPlaying))
                         }
                         40 -> { // arrow down
                             updateVolume(-5)
                         }
-                        122 -> // f12
-                            mediaPlayer.toggleFullScreen()
+                        83 -> { // 's' key
+                            val currentTrackId = mediaPlayer().subpictures().track()
+                            var found = false
+                            var newTrackDescription: TrackDescription? = null
+                            for (trackDesc in mediaPlayer().subpictures().trackDescriptions()) {
+                                if (found) {
+                                    newTrackDescription = trackDesc
+                                    break
+                                }
+
+                                if (trackDesc.id() == currentTrackId)
+                                    found = true
+                            }
+                            mediaPlayer().subpictures().setTrack(newTrackDescription?.id() ?: -1)
+
+                            mediaPlayer().marquee().setText("Subtitle track: ${newTrackDescription?.description()
+                                    ?: "disabled"}")
+                        }
+                        122 -> // f11
+                            mediaPlayer().fullScreen().toggle()
+
                     }
                     if (e.keyCode == 32) { // space
-                        mediaPlayer.pause()
+                        mediaPlayer().controls().pause()
                         lastStatus = "synchronizing with the server"
                     }
                 }
             }
 
-            currentVolume = mediaPlayerComponent!!.mediaPlayer!!.volume
-            updateWindowTitle()
-
-            contentPane.add(mediaPlayerComponent, BorderLayout.CENTER)
-
-//            val controlsPane = JPanel()
-//
-//            val pauseButton = JButton("Pause")
-//            val rewindButton = JButton("Rewind")
-//            val skipButton = JButton("Skip")
-//            val weirdButton = JButton("Weird button")
-//
-//
-//            listOf(pauseButton, rewindButton, skipButton, weirdButton).forEach { controlsPane.add(it) }
-//
-//            contentPane.add(controlsPane, BorderLayout.SOUTH)
-
             frame?.defaultCloseOperation = JFrame.DO_NOTHING_ON_CLOSE
             frame?.contentPane = contentPane
             frame?.isVisible = true
-            mediaPlayerComponent!!.mediaPlayer.setFullScreenStrategy(Win32FullScreenStrategy(frame))
-            mediaPlayerComponent!!.mediaPlayer.playMedia(file.absolutePath)
-            mediaPlayerComponent!!.mediaPlayer.setPause(true)
+
+            mediaPlayerComponent!!.apply {
+                contentPane.add(this, BorderLayout.CENTER)
+
+                mediaPlayer().apply {
+                    currentVolume = audio().volume()
+
+                    fullScreen().strategy(Win32FullScreenStrategy(frame))
+                    media().play(file.absolutePath)
+                    controls().setPause(true)
+                }
+            }
+
+            updateWindowTitle()
 
             sendToServer(ClientPlaybackStatusRequestMessage(currentVideoChecksum!!))
 
-            contentPane.addMouseListener(object : MouseListener {
-                override fun mouseReleased(e: MouseEvent?) {
-
-                }
-
-                override fun mouseEntered(e: MouseEvent?) {
-
-                }
-
-                override fun mouseExited(e: MouseEvent?) {
-
-                }
-
-                override fun mousePressed(e: MouseEvent?) {
-
-                }
-
-                override fun mouseClicked(e: MouseEvent?) {
-//                frame.extendedState = JFrame.MAXIMIZED_BOTH
-//                frame.isUndecorated = true
-//                frame.isVisible = true
-                }
-            })
             frame?.addWindowListener(object : WindowAdapter() {
                 override fun windowClosing(e: WindowEvent) {
-                    timer.cancel()
-                    mediaPlayerComponent?.release()
-                    frame?.dispose()
-                    frame?.isVisible = false
+                    closeFrame()
                 }
             })
-
-//            pauseButton.addActionListener {
-//                mediaPlayerComponent.mediaPlayer.pause()
-//            }
-//            rewindButton.addActionListener {
-//                mediaPlayerComponent.mediaPlayer.skip(-10000)
-//            }
-//            skipButton.addActionListener {
-//                mediaPlayerComponent.mediaPlayer.skip(10000)
-//            }
-//            weirdButton.addActionListener {
-//                mediaPlayerComponent.mediaPlayer.toggleFullScreen()
-//            }
         }
     }
 }

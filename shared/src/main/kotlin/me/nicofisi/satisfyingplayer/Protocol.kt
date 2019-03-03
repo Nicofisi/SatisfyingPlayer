@@ -4,6 +4,8 @@ package me.nicofisi.satisfyingplayer
 
 const val SERVER_PORT = 34857
 
+const val PROTOCOL_VERSION = 4
+
 
 abstract class Message(val name: String)
 
@@ -44,7 +46,9 @@ class ClientPlaybackStatusRequestMessage(
 
 
 class ServerPingMessage(
-        val timeMillis: Long
+        val timeMillis: Long,
+        val peopleConnected: Int
+
 ) : Message("ping"), ServerMessage
 
 class ServerPauseMessage(

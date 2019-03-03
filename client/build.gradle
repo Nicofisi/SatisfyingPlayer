@@ -1,8 +1,8 @@
 apply plugin: 'application'
 
-mainClassName = 'tutorial.MainKt'
+mainClassName = 'me.nicofisi.satisfyingplayer.ClientMainKt'
 
 dependencies {
     implementation project(':shared')
-    implementation group: 'uk.co.caprica', name: 'vlcj', version: '3.10.1'
+    implementation group: 'uk.co.caprica', name: 'vlcj', version: '4.0.3'
 }
